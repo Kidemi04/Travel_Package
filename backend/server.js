@@ -738,7 +738,7 @@ async function startServer() {
             process.exit(1);
         }
         
-        app.listen(PORT, () => {
+        app.listen(PORT, '0.0.0.0', () => {
             console.log('🚀 TravelEase API Server running on port', PORT);
             console.log('📊 Health check: http://localhost:' + PORT + '/api/health');
             console.log('📦 Packages: http://localhost:' + PORT + '/api/packages');
