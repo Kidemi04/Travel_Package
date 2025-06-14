@@ -11,8 +11,14 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors({
     origin: process.env.NODE_ENV === 'production' 
-        ? ['https://yourusername.github.io', 'https://your-domain.com'] 
-        : ['http://localhost:3000', 'http://127.0.0.1:5500'],
+        ? [
+            'https://kidemi04.github.io',  // 你的GitHub Pages域名
+            'https://travelpackage-production.up.railway.app'
+          ] 
+        : [
+            'http://localhost:3000',
+            'http://127.0.0.1:5500'
+          ],
     credentials: true
 }));
 app.use(express.json());
