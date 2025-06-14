@@ -27,14 +27,12 @@ app.use(express.urlencoded({ extended: true }));
 // ─── Database configuration ──────────────────────────────
 let pool;
  if (process.env.DATABASE_URL) {
-     // Cloud / Railway: 单行 URI + TLS
      pool = mysql.createPool({
          uri: process.env.DATABASE_URL,
          ssl: { rejectUnauthorized: false }
      });
      console.log('🔗 Using DATABASE_URL →', process.env.DATABASE_URL);
  } else {
-     // 本地开发回退到分字段
      const dbConfig = {
          host: process.env.DB_HOST || 'localhost',
          user: process.env.DB_USER || 'root',
@@ -495,12 +493,11 @@ app.post('/api/auth/register', async (req, res) => {
             });
         }
         
-        const hashedPassword = await bcrypt.hash(password, 10);
-        
+        // CHANGED: Store password as plain text
         const [result] = await pool.execute(
             `INSERT INTO users (firstName, lastName, email, password, phone, address) 
              VALUES (?, ?, ?, ?, ?, ?)`,
-            [firstName, lastName, email, hashedPassword, phone, address]
+            [firstName, lastName, email, password, phone, address]  // Plain password
         );
         
         res.status(201).json({
@@ -544,9 +541,8 @@ app.post('/api/auth/login', async (req, res) => {
         
         const user = users[0];
         
-        const isValidPassword = await bcrypt.compare(password, user.password);
-        
-        if (!isValidPassword) {
+        // CHANGED: Compare plain text passwords
+        if (password !== user.password) {
             return res.status(401).json({ 
                 success: false, 
                 error: 'Invalid credentials' 
