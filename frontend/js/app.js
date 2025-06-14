@@ -1,11 +1,8 @@
-// Main Vue.js Application - Simplified Version (No Loading Screen)
 const { createApp, reactive, computed } = Vue;
 const { createRouter, createWebHashHistory } = VueRouter;
 
-// API Configuration
 const API_BASE_URL = 'http://localhost:3000/api';
 
-// Global Store
 const store = reactive({
     user: null,
     isLoggedIn: false,
@@ -69,7 +66,6 @@ const store = reactive({
     }
 });
 
-// API Service
 const api = {
     setAuthToken(token) {
         if (token) {
@@ -91,55 +87,7 @@ const api = {
             return packages;
         } catch (error) {
             console.error('API Error:', error);
-            
-            // Fallback data if API fails
-            return [
-                {
-                    id: 1,
-                    name: "Bali Paradise Getaway",
-                    destination: "Bali, Indonesia",
-                    duration: "7 days",
-                    price: 1299,
-                    original_price: 1599,
-                    description: "Experience the magic of Bali with pristine beaches and temples.",
-                    image: "https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=400&h=300&fit=crop",
-                    category: "international",
-                    rating: 4.8,
-                    available: true,
-                    discount_percentage: 19,
-                    inclusions: "Round-trip flights,5-star resort,Daily breakfast,Temple tours"
-                },
-                {
-                    id: 2,
-                    name: "Sydney Harbour Explorer",
-                    destination: "Sydney, Australia",
-                    duration: "5 days",
-                    price: 899,
-                    original_price: 1099,
-                    description: "Discover Sydney's iconic landmarks and beautiful harbor.",
-                    image: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=300&fit=crop",
-                    category: "domestic",
-                    rating: 4.6,
-                    available: true,
-                    discount_percentage: 18,
-                    inclusions: "Hotel accommodation,Harbour cruise,Opera House tour,Bondi Beach"
-                },
-                {
-                    id: 3,
-                    name: "Tokyo Cultural Journey",
-                    destination: "Tokyo, Japan",
-                    duration: "10 days",
-                    price: 2299,
-                    original_price: 2899,
-                    description: "Immerse yourself in Japan's rich culture, from ancient temples to modern technology.",
-                    image: "https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?w=400&h=300&fit=crop",
-                    category: "international",
-                    rating: 4.9,
-                    available: true,
-                    discount_percentage: 21,
-                    inclusions: "International flights,Traditional ryokan,JR Rail Pass,Cultural workshops"
-                }
-            ];
+            throw new Error('Failed to load packages. Please ensure the server is running.');
         }
     },
 
@@ -213,7 +161,6 @@ const api = {
     }
 };
 
-// Routes
 const routes = [
     { path: '/', component: HomePage },
     { path: '/products', component: ProductsPage },
@@ -230,7 +177,6 @@ const router = createRouter({
     routes
 });
 
-// Vue App
 const app = createApp({
     data() {
         return { store };
@@ -253,7 +199,6 @@ const app = createApp({
     created() {
         console.log('Vue app created');
         
-        // 恢复登录状态
         const token = localStorage.getItem('token');
         const savedUser = localStorage.getItem('user');
         
@@ -267,7 +212,6 @@ const app = createApp({
             }
         }
         
-        // 恢复购物车
         this.store.loadCart();
     },
     
@@ -276,21 +220,18 @@ const app = createApp({
     }
 });
 
-// Register components
 app.component('PackageCard', PackageCard);
 app.component('AlertMessage', AlertMessage);
 app.component('LoadingSpinner', LoadingSpinner);
 
-// Global properties
 app.config.globalProperties.$api = api;
 app.config.globalProperties.$store = store;
 
-// Global filters
 app.config.globalProperties.$filters = {
     currency(value) {
-        return new Intl.NumberFormat('en-AU', {
+        return new Intl.NumberFormat('en-MY', {
             style: 'currency',
-            currency: 'AUD'
+            currency: 'MYR'
         }).format(value);
     },
     
@@ -305,10 +246,8 @@ app.config.globalProperties.$filters = {
     }
 };
 
-// Use router
 app.use(router);
 
-// Mount app
 console.log('Mounting Vue app...');
 const vueApp = app.mount('#app');
 console.log('Vue app mounted successfully');

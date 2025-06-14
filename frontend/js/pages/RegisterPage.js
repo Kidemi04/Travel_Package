@@ -64,7 +64,7 @@ const RegisterPage = {
                                     <input type="tel" class="form-control" 
                                            :class="{'is-invalid': errors.phone}"
                                            v-model="registerData.phone"
-                                           placeholder="+61 400 123 456"
+                                           placeholder="+60 12-345 6789"
                                            required>
                                     <div class="invalid-feedback" v-if="errors.phone">
                                         {{errors.phone}}
@@ -141,13 +141,6 @@ const RegisterPage = {
                                         </span>
                                     </button>
                                 </div>
-
-                                <!-- Demo Data -->
-                                <div class="text-center mb-3">
-                                    <button type="button" class="btn btn-outline-secondary btn-sm" @click="fillDemoData">
-                                        <i class="bi bi-magic"></i> Fill Demo Data
-                                    </button>
-                                </div>
                             </form>
 
                             <!-- Switch to Login -->
@@ -207,11 +200,9 @@ const RegisterPage = {
     },
     
     methods: {
-        // Registration - creates database records (required for marking)
         async register() {
             this.errors = {};
             
-            // Form validation - required for marking
             if (!this.registerData.firstName) {
                 this.errors.firstName = 'First name is required';
             }
@@ -258,7 +249,6 @@ const RegisterPage = {
             this.loading = true;
             
             try {
-                // Register user - stores in MySQL database
                 const response = await this.$api.register(this.registerData);
                 
                 alert(`Welcome to TravelEase, ${response.user.firstName}!`);
@@ -274,19 +264,6 @@ const RegisterPage = {
         isValidEmail(email) {
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
             return emailRegex.test(email);
-        },
-        
-        fillDemoData() {
-            this.registerData = {
-                firstName: 'John',
-                lastName: 'Doe',
-                email: 'john.doe@example.com',
-                password: 'password123',
-                confirmPassword: 'password123',
-                phone: '+61 400 123 456',
-                address: '123 Collins Street, Melbourne VIC 3000'
-            };
-            this.acceptedTerms = true;
         },
         
         showTerms() {

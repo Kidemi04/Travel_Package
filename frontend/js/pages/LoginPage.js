@@ -60,13 +60,6 @@ const LoginPage = {
                                         </span>
                                     </button>
                                 </div>
-
-                                <!-- Demo Credentials -->
-                                <div class="text-center mb-3">
-                                    <button type="button" class="btn btn-outline-secondary btn-sm" @click="fillDemoData">
-                                        <i class="bi bi-magic"></i> Use Demo Account
-                                    </button>
-                                </div>
                             </form>
 
                             <!-- Switch to Register -->
@@ -75,22 +68,6 @@ const LoginPage = {
                                     Don't have an account? 
                                     <router-link to="/register" class="text-primary fw-semibold">Create one here</router-link>
                                 </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Demo Account Info -->
-                    <div class="mt-4 p-4 bg-light rounded">
-                        <h6 class="fw-bold mb-2">Demo Account</h6>
-                        <p class="small text-muted mb-2">For testing:</p>
-                        <div class="row">
-                            <div class="col-6">
-                                <strong>Email:</strong><br>
-                                <code>demo@travelease.com</code>
-                            </div>
-                            <div class="col-6">
-                                <strong>Password:</strong><br>
-                                <code>demo123</code>
                             </div>
                         </div>
                     </div>
@@ -112,7 +89,6 @@ const LoginPage = {
     },
     
     created() {
-        // Redirect if already logged in
         if (this.$store.isLoggedIn) {
             this.$router.push('/');
         }
@@ -122,7 +98,6 @@ const LoginPage = {
         async login() {
             this.errors = {};
             
-            // Form validation - required for marking
             if (!this.loginData.email) {
                 this.errors.email = 'Email is required';
             } else if (!this.isValidEmail(this.loginData.email)) {
@@ -143,7 +118,6 @@ const LoginPage = {
                 const response = await this.$api.login(this.loginData.email, this.loginData.password);
                 alert(`Welcome back, ${response.user.firstName}!`);
                 
-                // Redirect
                 const redirect = this.$route.query.redirect || '/';
                 this.$router.push(redirect);
                 
@@ -159,15 +133,8 @@ const LoginPage = {
             return emailRegex.test(email);
         },
         
-        fillDemoData() {
-            this.loginData = {
-                email: 'demo@travelease.com',
-                password: 'demo123'
-            };
-        },
-        
         showForgotPassword() {
-            alert('Password reset: For demo, use demo@travelease.com / demo123');
+            alert('Password reset: Please contact support at support@travelease.com');
         }
     }
 };
