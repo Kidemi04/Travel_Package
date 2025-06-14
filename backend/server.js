@@ -25,17 +25,24 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Database configuration
-const dbConfig = {
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'travelease',
-    port: process.env.DB_PORT || 3306,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-};
-
-// Create database connection pool
-const pool = mysql.createPool(dbConfig);
+let pool;
+if (process.env.DATABASE_URL) {
+     pool = mysql.createPool({
+         uri: process.env.DATABASE_URL,
+         ssl: { rejectUnauthorized: false }
+     });
+     console.log('🔗 Using DATABASE_URL for connection');
+ } else {
+     const dbConfig = {
+         host: process.env.DB_HOST || 'localhost',
+         user: process.env.DB_USER || 'root',
+         password: process.env.DB_PASSWORD || '',
+         database: process.env.DB_NAME || 'travelease',
+         port: process.env.DB_PORT || 3306
+     };
+     pool = mysql.createPool(dbConfig);
+     console.log('🔗 Using local DB_* vars for connection');
+}
 
 // Test database connection
 async function testConnection() {
