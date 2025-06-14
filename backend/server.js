@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors({
     origin: process.env.NODE_ENV === 'production' 
         ? [
-            'https://kidemi04.github.io',  // 你的GitHub Pages域名
+            'https://kidemi04.github.io',
             'https://travelpackage-production.up.railway.app'
           ] 
         : [
@@ -24,15 +24,17 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Database configuration
+// ─── Database configuration ──────────────────────────────
 let pool;
-if (process.env.DATABASE_URL) {
+ if (process.env.DATABASE_URL) {
+     // Cloud / Railway: 单行 URI + TLS
      pool = mysql.createPool({
          uri: process.env.DATABASE_URL,
          ssl: { rejectUnauthorized: false }
      });
-     console.log('🔗 Using DATABASE_URL for connection');
+     console.log('🔗 Using DATABASE_URL →', process.env.DATABASE_URL);
  } else {
+     // 本地开发回退到分字段
      const dbConfig = {
          host: process.env.DB_HOST || 'localhost',
          user: process.env.DB_USER || 'root',
@@ -41,7 +43,7 @@ if (process.env.DATABASE_URL) {
          port: process.env.DB_PORT || 3306
      };
      pool = mysql.createPool(dbConfig);
-     console.log('🔗 Using local DB_* vars for connection');
+     console.log('🔗 Using local DB_* vars');
 }
 
 // Test database connection
