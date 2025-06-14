@@ -728,7 +728,7 @@ app.use('*', (req, res) => {
     });
 });
 
-// Start server
+// Startt server
 async function startServer() {
     try {
         const dbConnected = await testConnection();
