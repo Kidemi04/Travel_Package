@@ -1,7 +1,6 @@
-// TravelEase Backend API Server - Simplified Working Version
 const express = require('express');
 const mysql = require('mysql2/promise');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 require('dotenv').config();
@@ -10,7 +9,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: process.env.NODE_ENV === 'production' 
+        ? ['https://yourusername.github.io', 'https://your-domain.com'] 
+        : ['http://localhost:3000', 'http://127.0.0.1:5500'],
+    credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -19,7 +23,9 @@ const dbConfig = {
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'travelease'
+    database: process.env.DB_NAME || 'travelease',
+    port: process.env.DB_PORT || 3306,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 };
 
 // Create database connection pool
@@ -56,16 +62,23 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
-// ==================== BASIC ROUTES ====================
-
 // Health check
+app.get('/', (req, res) => {
+    res.json({ 
+        status: 'OK', 
+        message: 'TravelEase API is running',
+        timestamp: new Date().toISOString()
+    });
+});
+
 app.get('/api/health', async (req, res) => {
     try {
         const dbConnected = await testConnection();
         res.json({ 
             status: 'OK', 
             message: 'TravelEase API is running',
-            database: dbConnected ? 'Connected' : 'Disconnected'
+            database: dbConnected ? 'Connected' : 'Disconnected',
+            timestamp: new Date().toISOString()
         });
     } catch (error) {
         res.status(500).json({ 
@@ -154,7 +167,6 @@ app.post('/api/auth/register', async (req, res) => {
     try {
         const { firstName, lastName, email, password, phone, address } = req.body;
         
-        // Basic validation
         if (!firstName || !lastName || !email || !password || !phone || !address) {
             return res.status(400).json({ 
                 success: false, 
@@ -162,7 +174,6 @@ app.post('/api/auth/register', async (req, res) => {
             });
         }
         
-        // Check if user exists
         const [existingUsers] = await pool.execute(
             'SELECT id FROM users WHERE email = ?', 
             [email]
@@ -175,10 +186,8 @@ app.post('/api/auth/register', async (req, res) => {
             });
         }
         
-        // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
         
-        // Insert user
         const [result] = await pool.execute(
             `INSERT INTO users (firstName, lastName, email, password, phone, address) 
              VALUES (?, ?, ?, ?, ?, ?)`,
@@ -212,7 +221,6 @@ app.post('/api/auth/login', async (req, res) => {
             });
         }
         
-        // Find user
         const [users] = await pool.execute(
             'SELECT * FROM users WHERE email = ? AND is_active = TRUE', 
             [email]
@@ -227,7 +235,6 @@ app.post('/api/auth/login', async (req, res) => {
         
         const user = users[0];
         
-        // Check password
         const isValidPassword = await bcrypt.compare(password, user.password);
         
         if (!isValidPassword) {
@@ -237,7 +244,6 @@ app.post('/api/auth/login', async (req, res) => {
             });
         }
         
-        // Generate token
         const token = jwt.sign(
             { 
                 userId: user.id, 
@@ -248,7 +254,6 @@ app.post('/api/auth/login', async (req, res) => {
             { expiresIn: '24h' }
         );
         
-        // Remove password from response
         const { password: _, ...userWithoutPassword } = user;
         
         res.json({
@@ -364,7 +369,6 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
             });
         }
         
-        // Calculate total
         let subtotal = 0;
         for (const item of items) {
             const [packages] = await pool.execute(
@@ -380,10 +384,8 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
         const taxAmount = subtotal * 0.10;
         const totalAmount = subtotal + taxAmount;
         
-        // Generate booking reference
         const bookingRef = 'TRV' + Date.now().toString().slice(-8);
         
-        // Create booking
         const [result] = await pool.execute(
             `INSERT INTO bookings 
              (user_id, booking_reference, subtotal, tax_amount, total_amount) 
