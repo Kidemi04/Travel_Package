@@ -1,7 +1,9 @@
 const { createApp, reactive, computed } = Vue;
 const { createRouter, createWebHashHistory } = VueRouter;
 
-const API_BASE_URL = 'http://localhost:3000/api';
+const API_BASE_URL = window.location.hostname === 'localhost' 
+    ? 'http://localhost:3000/api'  // Local
+    : 'https://travelpackage-production.up.railway.app/api';  // Web Host
 
 const store = reactive({
     user: null,
