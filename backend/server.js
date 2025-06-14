@@ -127,14 +127,13 @@ app.get('/api/health', async (req, res) => {
     }
 });
 
-// Enhanced Database initialization with detailed output
 app.get('/api/init-full-database', async (req, res) => {
     const startTime = Date.now();
     const logs = [];
     
     try {
-        logs.push('🔄 Starting FULL database initialization...');
-        console.log('🔄 Starting FULL database initialization...');
+        logs.push('🔄 Starting COMPLETE database setup...');
+        console.log('🔄 Starting COMPLETE database setup...');
         
         // Environment info
         const environment = {
@@ -147,24 +146,140 @@ app.get('/api/init-full-database', async (req, res) => {
         logs.push(`📍 Environment: ${environment.platform} (${environment.node_env})`);
         console.log(`📍 Environment: ${environment.platform} (${environment.node_env})`);
 
-        // Check if data already exists
+        // STEP 1: CREATE TABLES
+        logs.push('🏗️ Creating database tables...');
+        console.log('🏗️ Creating database tables...');
+
+        // Create users table
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS users (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                firstName VARCHAR(50) NOT NULL,
+                lastName VARCHAR(50) NOT NULL,
+                email VARCHAR(100) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                phone VARCHAR(20) NOT NULL,
+                address TEXT NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_email (email),
+                INDEX idx_active (is_active)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
+        logs.push('✅ Users table created');
+
+        // Create travel_packages table
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS travel_packages (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                name VARCHAR(200) NOT NULL,
+                destination VARCHAR(100) NOT NULL,
+                duration VARCHAR(50) NOT NULL,
+                price DECIMAL(10,2) NOT NULL,
+                original_price DECIMAL(10,2),
+                description TEXT NOT NULL,
+                image VARCHAR(500),
+                category ENUM('domestic', 'international') NOT NULL,
+                rating DECIMAL(3,2) DEFAULT 0,
+                available BOOLEAN DEFAULT TRUE,
+                discount_percentage INT DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_category (category),
+                INDEX idx_available (available),
+                INDEX idx_rating (rating)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
+        logs.push('✅ Travel packages table created');
+
+        // Create package_inclusions table
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS package_inclusions (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                package_id INT NOT NULL,
+                inclusion VARCHAR(200) NOT NULL,
+                FOREIGN KEY (package_id) REFERENCES travel_packages(id) ON DELETE CASCADE,
+                INDEX idx_package (package_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
+        logs.push('✅ Package inclusions table created');
+
+        // Create bookings table
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS bookings (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                user_id INT NOT NULL,
+                booking_reference VARCHAR(50) UNIQUE NOT NULL,
+                status ENUM('pending', 'confirmed', 'cancelled', 'completed') DEFAULT 'confirmed',
+                subtotal DECIMAL(10,2) NOT NULL,
+                tax_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+                shipping_cost DECIMAL(10,2) DEFAULT 0,
+                discount_amount DECIMAL(10,2) DEFAULT 0,
+                total_amount DECIMAL(10,2) NOT NULL,
+                promo_code VARCHAR(20),
+                special_requests TEXT,
+                booking_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                travel_date DATE,
+                last_modified TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                INDEX idx_user (user_id),
+                INDEX idx_status (status),
+                INDEX idx_booking_date (booking_date)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
+        logs.push('✅ Bookings table created');
+
+        // Create booking_items table
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS booking_items (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                booking_id INT NOT NULL,
+                package_id INT NOT NULL,
+                quantity INT NOT NULL DEFAULT 1,
+                unit_price DECIMAL(10,2) NOT NULL,
+                total_price DECIMAL(10,2) NOT NULL,
+                special_requests TEXT,
+                FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE,
+                FOREIGN KEY (package_id) REFERENCES travel_packages(id),
+                INDEX idx_booking (booking_id),
+                INDEX idx_package (package_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
+        logs.push('✅ Booking items table created');
+
+        // Create user_sessions table
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS user_sessions (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                user_id INT NOT NULL,
+                token_hash VARCHAR(255) NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                INDEX idx_user (user_id),
+                INDEX idx_expires (expires_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
+        logs.push('✅ User sessions table created');
+
+        // STEP 2: CHECK IF DATA EXISTS
         logs.push('🔍 Checking existing data...');
         console.log('🔍 Checking existing data...');
         
         const [existingPackages] = await pool.execute('SELECT COUNT(*) as count FROM travel_packages');
-        const [existingInclusions] = await pool.execute('SELECT COUNT(*) as count FROM package_inclusions');
         
         if (existingPackages[0].count > 0) {
             return res.json({ 
                 success: true, 
-                message: `Database already initialized with ${existingPackages[0].count} packages and ${existingInclusions[0].count} inclusions. No action needed.`,
+                message: `Database tables created successfully! Already has ${existingPackages[0].count} packages. No data insertion needed.`,
                 environment,
                 execution_time: `${Date.now() - startTime}ms`,
                 logs
             });
         }
 
-        // Insert travel packages
+        // STEP 3: INSERT SAMPLE DATA
         logs.push('📦 Inserting travel packages...');
         console.log('📦 Inserting travel packages...');
         
@@ -184,9 +299,11 @@ app.get('/api/init-full-database', async (req, res) => {
 
         await pool.execute(packagesSQL);
         logs.push('✅ Travel packages inserted successfully');
-        console.log('✅ Travel packages inserted successfully');
 
-        // Package inclusions data
+        // STEP 4: INSERT PACKAGE INCLUSIONS
+        logs.push('🎯 Inserting package inclusions...');
+        console.log('🎯 Inserting package inclusions...');
+        
         const inclusionsData = [
             [1, 'Hotel accommodation'], [1, 'Petronas Twin Towers visit'], [1, 'Food tour'], [1, 'Airport transfers'],
             [2, 'Heritage hotel'], [2, 'Georgetown walking tour'], [2, 'Street art tour'], [2, 'Local cuisine tasting'],
@@ -202,10 +319,6 @@ app.get('/api/init-full-database', async (req, res) => {
             [12, 'International flights'], [12, 'Hotel accommodation'], [12, 'Gardens by the Bay'], [12, 'Marina Bay Sands']
         ];
 
-        // Insert package inclusions
-        logs.push('🎯 Inserting package inclusions...');
-        console.log('🎯 Inserting package inclusions...');
-        
         for (const inclusion of inclusionsData) {
             await pool.execute(
                 'INSERT INTO package_inclusions (package_id, inclusion) VALUES (?, ?)',
@@ -213,104 +326,46 @@ app.get('/api/init-full-database', async (req, res) => {
             );
         }
         logs.push('✅ Package inclusions inserted successfully');
-        console.log('✅ Package inclusions inserted successfully');
 
-        // Create views
-        logs.push('👁️ Creating database views...');
-        console.log('👁️ Creating database views...');
-        
-        const viewsCreated = [];
-        
-        try {
-            await pool.execute(`
-                CREATE VIEW active_packages AS
-                SELECT 
-                    p.*,
-                    GROUP_CONCAT(pi.inclusion) as inclusions
-                FROM travel_packages p 
-                LEFT JOIN package_inclusions pi ON p.id = pi.package_id
-                WHERE p.available = TRUE 
-                GROUP BY p.id
-                ORDER BY p.rating DESC, p.created_at DESC
-            `);
-            viewsCreated.push('active_packages');
-            logs.push('✅ View "active_packages" created');
-        } catch (error) {
-            logs.push('⚠️ View "active_packages" already exists or error: ' + error.message);
-        }
-
-        try {
-            await pool.execute(`
-                CREATE VIEW user_booking_summary AS
-                SELECT 
-                    u.id as user_id,
-                    u.firstName,
-                    u.lastName,
-                    u.email,
-                    COUNT(b.id) as total_bookings,
-                    COALESCE(SUM(b.total_amount), 0) as total_spent,
-                    MAX(b.booking_date) as last_booking_date
-                FROM users u
-                LEFT JOIN bookings b ON u.id = b.user_id AND b.status != 'cancelled'
-                GROUP BY u.id, u.firstName, u.lastName, u.email
-            `);
-            viewsCreated.push('user_booking_summary');
-            logs.push('✅ View "user_booking_summary" created');
-        } catch (error) {
-            logs.push('⚠️ View "user_booking_summary" already exists or error: ' + error.message);
-        }
-
-        // Create indexes
-        logs.push('🔍 Creating database indexes...');
-        console.log('🔍 Creating database indexes...');
-        
-        const indexesCreated = [];
+        // STEP 5: CREATE PERFORMANCE INDEXES
+        logs.push('🔍 Creating performance indexes...');
+        console.log('🔍 Creating performance indexes...');
         
         try {
             await pool.execute('CREATE INDEX idx_packages_search ON travel_packages(name, destination)');
-            indexesCreated.push('idx_packages_search');
-            logs.push('✅ Index "idx_packages_search" created');
+            logs.push('✅ Search index created');
         } catch (error) {
-            logs.push('⚠️ Index "idx_packages_search" already exists: ' + error.message);
+            logs.push('⚠️ Search index already exists');
         }
 
         try {
             await pool.execute('CREATE INDEX idx_bookings_user_status ON bookings(user_id, status)');
-            indexesCreated.push('idx_bookings_user_status');
-            logs.push('✅ Index "idx_bookings_user_status" created');
+            logs.push('✅ Booking index created');
         } catch (error) {
-            logs.push('⚠️ Index "idx_bookings_user_status" already exists: ' + error.message);
+            logs.push('⚠️ Booking index already exists');
         }
 
-        try {
-            await pool.execute('CREATE INDEX idx_booking_items_composite ON booking_items(booking_id, package_id)');
-            indexesCreated.push('idx_booking_items_composite');
-            logs.push('✅ Index "idx_booking_items_composite" created');
-        } catch (error) {
-            logs.push('⚠️ Index "idx_booking_items_composite" already exists: ' + error.message);
-        }
-
-        // Final verification
-        logs.push('🔍 Verifying data insertion...');
-        console.log('🔍 Verifying data insertion...');
+        // STEP 6: FINAL VERIFICATION
+        logs.push('🔍 Verifying setup...');
+        console.log('🔍 Verifying setup...');
         
         const [finalPackages] = await pool.execute('SELECT COUNT(*) as count FROM travel_packages');
         const [finalInclusions] = await pool.execute('SELECT COUNT(*) as count FROM package_inclusions');
 
         const executionTime = Date.now() - startTime;
-        logs.push(`🎉 Database initialization completed in ${executionTime}ms`);
-        console.log(`🎉 Database initialization completed in ${executionTime}ms`);
+        logs.push(`🎉 Complete database setup finished in ${executionTime}ms`);
+        console.log(`🎉 Complete database setup finished in ${executionTime}ms`);
 
         res.json({ 
             success: true, 
-            message: `🎉 Database initialization completed successfully!`,
+            message: `🎉 Complete database setup completed successfully!`,
             environment,
             execution_time: `${executionTime}ms`,
             details: {
+                tables_created: ['users', 'travel_packages', 'package_inclusions', 'bookings', 'booking_items', 'user_sessions'],
                 packages_inserted: finalPackages[0].count,
                 inclusions_inserted: finalInclusions[0].count,
-                views_created: viewsCreated,
-                indexes_created: indexesCreated
+                indexes_created: ['idx_packages_search', 'idx_bookings_user_status']
             },
             logs
         });
@@ -318,7 +373,7 @@ app.get('/api/init-full-database', async (req, res) => {
     } catch (error) {
         const executionTime = Date.now() - startTime;
         logs.push(`❌ Error: ${error.message}`);
-        console.error('Database initialization error:', error);
+        console.error('Complete database setup error:', error);
         
         res.status(500).json({ 
             success: false, 
