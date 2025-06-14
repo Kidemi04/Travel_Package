@@ -136,6 +136,16 @@ const api = {
             if (response.data.success) {
                 const updatedUser = { ...store.user, ...userData };
                 store.setUser(updatedUser);
+                
+                // If email was changed, update token
+                if (response.data.newToken) {
+                    localStorage.setItem('token', response.data.newToken);
+                    this.setAuthToken(response.data.newToken);
+                    
+                    // Show alert about email change
+                    alert('Email updated successfully! Please note your new login email: ' + userData.email);
+                }
+                
                 return response.data;
             }
             throw new Error('Failed to update profile');

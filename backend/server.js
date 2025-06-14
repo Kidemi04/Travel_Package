@@ -609,17 +609,60 @@ app.get('/api/user/profile', authenticateToken, async (req, res) => {
 // Update user profile
 app.put('/api/user/profile', authenticateToken, async (req, res) => {
     try {
-        const { firstName, lastName, phone, address } = req.body;
+        const { firstName, lastName, phone, address, email } = req.body;
+        const userId = req.user.userId;
         
-        await pool.execute(
-            'UPDATE users SET firstName = ?, lastName = ?, phone = ?, address = ? WHERE id = ?',
-            [firstName, lastName, phone, address, req.user.userId]
-        );
-        
-        res.json({
-            success: true,
-            message: 'Profile updated successfully'
-        });
+        // Check if email is being changed
+        if (email && email !== req.user.email) {
+            // Check if new email already exists
+            const [existingUsers] = await pool.execute(
+                'SELECT id FROM users WHERE email = ? AND id != ?',
+                [email, userId]
+            );
+            
+            if (existingUsers.length > 0) {
+                return res.status(409).json({
+                    success: false,
+                    error: 'Email already in use'
+                });
+            }
+            
+            // Update including email
+            await pool.execute(
+                'UPDATE users SET firstName = ?, lastName = ?, phone = ?, address = ?, email = ? WHERE id = ?',
+                [firstName, lastName, phone, address, email, userId]
+            );
+            
+            // Generate new token with updated email
+            const newToken = jwt.sign(
+                { 
+                    userId: userId, 
+                    email: email,
+                    name: `${firstName} ${lastName}`
+                },
+                process.env.JWT_SECRET,
+                { expiresIn: '24h' }
+            );
+            
+            res.json({
+                success: true,
+                message: 'Profile updated successfully',
+                newToken: newToken,  // Send new token
+                requiresRelogin: true
+            });
+        } else {
+            // Update without email
+            await pool.execute(
+                'UPDATE users SET firstName = ?, lastName = ?, phone = ?, address = ? WHERE id = ?',
+                [firstName, lastName, phone, address, userId]
+            );
+            
+            res.json({
+                success: true,
+                message: 'Profile updated successfully',
+                requiresRelogin: false
+            });
+        }
         
     } catch (error) {
         console.error('Profile update error:', error);
