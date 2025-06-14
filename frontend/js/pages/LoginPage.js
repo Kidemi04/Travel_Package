@@ -1,11 +1,8 @@
 const LoginPage = {
     template: `
-        <!-- Alert Messages -->
-        <alert-message v-if="alerts.length" :alerts="alerts" @close="closeAlert"></alert-message>
-
         <div class="container py-5">
             <div class="row justify-content-center">
-                <div class="col-lg-5 col-md-7 col-12">
+                <div class="col-lg-5 col-md-7">
                     <div class="card shadow-lg border-0">
                         <div class="card-body p-5">
                             <!-- Header -->
@@ -22,7 +19,7 @@ const LoginPage = {
                                     <input type="email" class="form-control" 
                                            :class="{'is-invalid': errors.email}"
                                            v-model="loginData.email"
-                                           placeholder="Enter your email address"
+                                           placeholder="Enter your email"
                                            required>
                                     <div class="invalid-feedback" v-if="errors.email">
                                         {{errors.email}}
@@ -42,13 +39,11 @@ const LoginPage = {
                                     </div>
                                 </div>
 
-                                <!-- Remember Me & Forgot Password -->
+                                <!-- Remember Me -->
                                 <div class="d-flex justify-content-between align-items-center mb-4">
                                     <div class="form-check">
                                         <input class="form-check-input" type="checkbox" id="remember" v-model="rememberMe">
-                                        <label class="form-check-label" for="remember">
-                                            Remember me
-                                        </label>
+                                        <label class="form-check-label" for="remember">Remember me</label>
                                     </div>
                                     <a href="#" class="text-primary small" @click.prevent="showForgotPassword">Forgot password?</a>
                                 </div>
@@ -69,30 +64,10 @@ const LoginPage = {
                                 <!-- Demo Credentials -->
                                 <div class="text-center mb-3">
                                     <button type="button" class="btn btn-outline-secondary btn-sm" @click="fillDemoData">
-                                        <i class="bi bi-magic"></i> Fill Demo Credentials
+                                        <i class="bi bi-magic"></i> Use Demo Account
                                     </button>
                                 </div>
                             </form>
-
-                            <!-- Divider -->
-                            <div class="text-center my-4">
-                                <div class="position-relative">
-                                    <hr>
-                                    <span class="position-absolute top-50 start-50 translate-middle bg-white px-3 text-muted">
-                                        OR
-                                    </span>
-                                </div>
-                            </div>
-
-                            <!-- Social Login (Demo) -->
-                            <div class="d-grid gap-2 mb-4">
-                                <button type="button" class="btn btn-outline-danger" @click="showSocialLogin('Google')">
-                                    <i class="bi bi-google"></i> Continue with Google
-                                </button>
-                                <button type="button" class="btn btn-outline-primary" @click="showSocialLogin('Facebook')">
-                                    <i class="bi bi-facebook"></i> Continue with Facebook
-                                </button>
-                            </div>
 
                             <!-- Switch to Register -->
                             <div class="text-center">
@@ -107,25 +82,17 @@ const LoginPage = {
                     <!-- Demo Account Info -->
                     <div class="mt-4 p-4 bg-light rounded">
                         <h6 class="fw-bold mb-2">Demo Account</h6>
-                        <p class="small text-muted mb-2">For testing purposes, you can use:</p>
+                        <p class="small text-muted mb-2">For testing:</p>
                         <div class="row">
                             <div class="col-6">
                                 <strong>Email:</strong><br>
-                                <code class="small">demo@travelease.com</code>
+                                <code>demo@travelease.com</code>
                             </div>
                             <div class="col-6">
                                 <strong>Password:</strong><br>
-                                <code class="small">demo123</code>
+                                <code>demo123</code>
                             </div>
                         </div>
-                    </div>
-
-                    <!-- Security Notice -->
-                    <div class="mt-3 text-center">
-                        <small class="text-muted">
-                            <i class="bi bi-shield-check text-success"></i>
-                            Your data is protected with industry-standard encryption
-                        </small>
                     </div>
                 </div>
             </div>
@@ -135,7 +102,6 @@ const LoginPage = {
     data() {
         return {
             loading: false,
-            alerts: [],
             rememberMe: false,
             loginData: {
                 email: '',
@@ -175,18 +141,14 @@ const LoginPage = {
             
             try {
                 const response = await this.$api.login(this.loginData.email, this.loginData.password);
+                alert(`Welcome back, ${response.user.firstName}!`);
                 
-                this.showAlert(`Login successful! Welcome back, ${response.user.firstName}`, 'success');
-                
-                // Redirect to intended route or home
+                // Redirect
                 const redirect = this.$route.query.redirect || '/';
-                setTimeout(() => {
-                    this.$router.push(redirect);
-                }, 1500);
+                this.$router.push(redirect);
                 
             } catch (error) {
-                console.error('Login error:', error);
-                this.showAlert(error.message || 'Invalid email or password', 'danger');
+                alert('Login failed: ' + error.message);
             } finally {
                 this.loading = false;
             }
@@ -205,22 +167,7 @@ const LoginPage = {
         },
         
         showForgotPassword() {
-            alert('Password reset functionality would be implemented here.\n\nFor demo purposes, use:\nEmail: demo@travelease.com\nPassword: demo123');
-        },
-        
-        showSocialLogin(provider) {
-            alert(`${provider} login would be implemented here using OAuth integration.`);
-        },
-        
-        showAlert(message, type) {
-            this.alerts.push({ message, type, id: Date.now() });
-            setTimeout(() => {
-                this.alerts.shift();
-            }, 5000);
-        },
-        
-        closeAlert(index) {
-            this.alerts.splice(index, 1);
+            alert('Password reset: For demo, use demo@travelease.com / demo123');
         }
     }
 };

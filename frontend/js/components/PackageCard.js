@@ -7,11 +7,13 @@ const PackageCard = {
     },
     
     template: `
-        <div class="card h-100 package-card" @mouseenter="addHover" @mouseleave="removeHover">
+        <div class="card h-100 package-card">
             <div class="position-relative">
-                <img :src="package.image" class="card-img-top" :alt="package.name" style="height: 200px; object-fit: cover;">
-                <span class="badge bg-danger position-absolute top-0 end-0 m-2" v-if="package.discount">
-                    -{{package.discount}}%
+                <img :src="package.image" class="card-img-top" :alt="package.name" 
+                     style="height: 200px; object-fit: cover;">
+                <span class="badge bg-danger position-absolute top-0 end-0 m-2" 
+                      v-if="package.discount_percentage">
+                    -{{package.discount_percentage}}%
                 </span>
                 <span class="badge position-absolute top-0 start-0 m-2" 
                       :class="package.category === 'international' ? 'bg-primary' : 'bg-success'">
@@ -29,7 +31,7 @@ const PackageCard = {
                 <p class="card-text flex-grow-1">{{$filters.truncate(package.description, 80)}}</p>
                 
                 <!-- Rating -->
-                <div class="mb-2">
+                <div class="mb-2" v-if="package.rating">
                     <span class="text-warning">
                         <span v-for="n in Math.floor(package.rating)" :key="'full-' + n">★</span>
                         <span v-if="package.rating % 1 !== 0">☆</span>
@@ -42,23 +44,25 @@ const PackageCard = {
                     <small class="text-muted">Includes:</small>
                     <div class="d-flex flex-wrap gap-1 mt-1">
                         <span class="badge bg-light text-dark" 
-                              v-for="(inclusion, index) in package.inclusions.slice(0, 3)" 
+                              v-for="(inclusion, index) in getInclusionsArray().slice(0, 3)" 
                               :key="index">
                             {{inclusion}}
                         </span>
-                        <span class="badge bg-secondary" v-if="package.inclusions.length > 3">
-                            +{{package.inclusions.length - 3}} more
+                        <span class="badge bg-secondary" v-if="getInclusionsArray().length > 3">
+                            +{{getInclusionsArray().length - 3}} more
                         </span>
                     </div>
                 </div>
                 
                 <!-- Price Section -->
                 <div class="price-section mb-3">
-                    <span class="text-decoration-line-through text-muted" v-if="package.original_price && package.original_price > package.price">
+                    <span class="text-decoration-line-through text-muted" 
+                          v-if="package.original_price && package.original_price > package.price">
                         {{$filters.currency(package.original_price)}}
                     </span>
                     <span class="h5 text-primary ms-2">{{$filters.currency(package.price)}}</span>
-                    <div class="text-muted small" v-if="package.original_price && package.original_price > package.price">
+                    <div class="text-muted small" 
+                         v-if="package.original_price && package.original_price > package.price">
                         Save {{$filters.currency(package.original_price - package.price)}}
                     </div>
                 </div>
@@ -79,7 +83,7 @@ const PackageCard = {
         </div>
         
         <!-- Package Details Modal -->
-        <div class="modal fade" :class="{show: showModal, 'd-block': showModal}" v-if="showModal" style="background: rgba(0,0,0,0.5);">
+        <div class="modal fade show d-block" v-if="showModal" style="background: rgba(0,0,0,0.5);">
             <div class="modal-dialog modal-lg">
                 <div class="modal-content">
                     <div class="modal-header">
@@ -99,13 +103,14 @@ const PackageCard = {
                                 <p>{{package.duration}}</p>
                                 
                                 <h6 class="fw-bold">Rating</h6>
-                                <p>
+                                <p v-if="package.rating">
                                     <span class="text-warning">
                                         <span v-for="n in Math.floor(package.rating)" :key="'modal-full-' + n">★</span>
                                         <span v-if="package.rating % 1 !== 0">☆</span>
                                     </span>
                                     {{package.rating}}/5
                                 </p>
+                                <p v-else>Not rated yet</p>
                                 
                                 <h6 class="fw-bold">Price</h6>
                                 <p class="h4 text-primary">{{$filters.currency(package.price)}}</p>
@@ -115,14 +120,15 @@ const PackageCard = {
                         <h6 class="fw-bold mt-3">Description</h6>
                         <p>{{package.description}}</p>
                         
-                        <h6 class="fw-bold" v-if="package.inclusions && package.inclusions.length">Package Includes</h6>
-                        <ul v-if="package.inclusions && package.inclusions.length">
-                            <li v-for="inclusion in package.inclusions" :key="inclusion">{{inclusion}}</li>
+                        <h6 class="fw-bold" v-if="getInclusionsArray().length">Package Includes</h6>
+                        <ul v-if="getInclusionsArray().length">
+                            <li v-for="inclusion in getInclusionsArray()" :key="inclusion">{{inclusion}}</li>
                         </ul>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" @click="closeModal">Close</button>
-                        <button type="button" class="btn btn-primary" @click="handleAddToCart" :disabled="!package.available">
+                        <button type="button" class="btn btn-primary" @click="handleAddToCart" 
+                                :disabled="!package.available">
                             <i class="bi bi-cart-plus"></i> Book This Package
                         </button>
                     </div>
@@ -147,7 +153,6 @@ const PackageCard = {
         
         showDetails() {
             this.showModal = true;
-            // Prevent body scroll when modal is open
             document.body.style.overflow = 'hidden';
         },
         
@@ -156,12 +161,16 @@ const PackageCard = {
             document.body.style.overflow = 'auto';
         },
         
-        addHover(event) {
-            event.currentTarget.querySelector('.card').classList.add('shadow-lg');
-        },
-        
-        removeHover(event) {
-            event.currentTarget.querySelector('.card').classList.remove('shadow-lg');
+        getInclusionsArray() {
+            if (!this.package.inclusions) return [];
+            
+            // 如果inclusions是字符串（从数据库来的），分割它
+            if (typeof this.package.inclusions === 'string') {
+                return this.package.inclusions.split(',').map(item => item.trim());
+            }
+            
+            // 如果inclusions是数组，直接返回
+            return this.package.inclusions;
         }
     },
     
@@ -173,50 +182,4 @@ const PackageCard = {
             }
         });
     }
-};
-
-// Alert Message Component
-const AlertMessage = {
-    props: {
-        alerts: {
-            type: Array,
-            required: true
-        }
-    },
-    
-    template: `
-        <div class="alert-container" v-if="alerts.length">
-            <div class="alert alert-dismissible fade show" 
-                 :class="'alert-' + alert.type" 
-                 v-for="(alert, index) in alerts" 
-                 :key="alert.id || index"
-                 role="alert">
-                {{alert.message}}
-                <button type="button" class="btn-close" @click="$emit('close', index)"></button>
-            </div>
-        </div>
-    `
-};
-
-// Loading Spinner Component
-const LoadingSpinner = {
-    props: {
-        show: {
-            type: Boolean,
-            default: false
-        },
-        message: {
-            type: String,
-            default: 'Loading...'
-        }
-    },
-    
-    template: `
-        <div class="text-center py-4" v-if="show">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-            <p class="mt-2 text-muted" v-if="message">{{message}}</p>
-        </div>
-    `
 };

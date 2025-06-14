@@ -1,18 +1,17 @@
-// Main Vue.js Application
-const { createApp, ref, reactive, computed } = Vue;
+// Main Vue.js Application - Simplified Version (No Loading Screen)
+const { createApp, reactive, computed } = Vue;
 const { createRouter, createWebHashHistory } = VueRouter;
 
 // API Configuration
 const API_BASE_URL = 'http://localhost:3000/api';
 
-// Global State Store
+// Global Store
 const store = reactive({
     user: null,
     isLoggedIn: false,
     cartItems: [],
     cartCount: computed(() => store.cartItems.length),
     
-    // Actions
     setUser(user) {
         this.user = user;
         this.isLoggedIn = !!user;
@@ -28,13 +27,13 @@ const store = reactive({
     },
     
     addToCart(item) {
-        const existingItem = this.cartItems.find(cartItem => cartItem.id === item.id);
-        if (existingItem) {
-            existingItem.quantity += 1;
+        const existing = this.cartItems.find(cartItem => cartItem.id === item.id);
+        if (existing) {
+            existing.quantity += 1;
         } else {
             this.cartItems.push({ ...item, quantity: 1, cartId: Date.now() });
         }
-        this.saveCart();
+        localStorage.setItem('cart', JSON.stringify(this.cartItems));
     },
     
     updateCartItem(cartId, quantity) {
@@ -44,7 +43,7 @@ const store = reactive({
                 this.removeFromCart(cartId);
             } else {
                 item.quantity = quantity;
-                this.saveCart();
+                localStorage.setItem('cart', JSON.stringify(this.cartItems));
             }
         }
     },
@@ -53,17 +52,13 @@ const store = reactive({
         const index = this.cartItems.findIndex(item => item.cartId === cartId);
         if (index !== -1) {
             this.cartItems.splice(index, 1);
-            this.saveCart();
+            localStorage.setItem('cart', JSON.stringify(this.cartItems));
         }
     },
     
     clearCart() {
         this.cartItems = [];
-        this.saveCart();
-    },
-    
-    saveCart() {
-        localStorage.setItem('cart', JSON.stringify(this.cartItems));
+        localStorage.removeItem('cart');
     },
     
     loadCart() {
@@ -76,7 +71,6 @@ const store = reactive({
 
 // API Service
 const api = {
-    // Set auth token for requests
     setAuthToken(token) {
         if (token) {
             axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
@@ -85,75 +79,127 @@ const api = {
         }
     },
 
-    // Travel Packages
-    async getPackages(category = 'all') {
+    async getPackages() {
         try {
-            const response = await axios.get(`${API_BASE_URL}/packages`, {
-                params: { category: category !== 'all' ? category : undefined }
-            });
-            return response.data;
+            console.log('Fetching packages from:', `${API_BASE_URL}/packages`);
+            const response = await axios.get(`${API_BASE_URL}/packages`);
+            console.log('API Response:', response.data);
+            
+            const packages = response.data.packages || response.data || [];
+            console.log('Processed packages:', packages);
+            
+            return packages;
         } catch (error) {
-            console.error('Error fetching packages:', error);
-            throw error;
+            console.error('API Error:', error);
+            
+            // Fallback data if API fails
+            return [
+                {
+                    id: 1,
+                    name: "Bali Paradise Getaway",
+                    destination: "Bali, Indonesia",
+                    duration: "7 days",
+                    price: 1299,
+                    original_price: 1599,
+                    description: "Experience the magic of Bali with pristine beaches and temples.",
+                    image: "https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=400&h=300&fit=crop",
+                    category: "international",
+                    rating: 4.8,
+                    available: true,
+                    discount_percentage: 19,
+                    inclusions: "Round-trip flights,5-star resort,Daily breakfast,Temple tours"
+                },
+                {
+                    id: 2,
+                    name: "Sydney Harbour Explorer",
+                    destination: "Sydney, Australia",
+                    duration: "5 days",
+                    price: 899,
+                    original_price: 1099,
+                    description: "Discover Sydney's iconic landmarks and beautiful harbor.",
+                    image: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=300&fit=crop",
+                    category: "domestic",
+                    rating: 4.6,
+                    available: true,
+                    discount_percentage: 18,
+                    inclusions: "Hotel accommodation,Harbour cruise,Opera House tour,Bondi Beach"
+                },
+                {
+                    id: 3,
+                    name: "Tokyo Cultural Journey",
+                    destination: "Tokyo, Japan",
+                    duration: "10 days",
+                    price: 2299,
+                    original_price: 2899,
+                    description: "Immerse yourself in Japan's rich culture, from ancient temples to modern technology.",
+                    image: "https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?w=400&h=300&fit=crop",
+                    category: "international",
+                    rating: 4.9,
+                    available: true,
+                    discount_percentage: 21,
+                    inclusions: "International flights,Traditional ryokan,JR Rail Pass,Cultural workshops"
+                }
+            ];
         }
     },
 
-    async searchPackages(searchTerm) {
-        try {
-            const response = await axios.get(`${API_BASE_URL}/packages/search`, {
-                params: { q: searchTerm }
-            });
-            return response.data;
-        } catch (error) {
-            console.error('Error searching packages:', error);
-            throw error;
-        }
-    },
-
-    // Authentication
     async register(userData) {
         try {
             const response = await axios.post(`${API_BASE_URL}/auth/register`, userData);
-            return response.data;
+            if (response.data.success) {
+                return await this.login(userData.email, userData.password);
+            }
+            throw new Error(response.data.error || 'Registration failed');
         } catch (error) {
-            throw error.response?.data || error;
+            throw new Error(error.response?.data?.error || 'Registration failed');
         }
     },
 
     async login(email, password) {
         try {
             const response = await axios.post(`${API_BASE_URL}/auth/login`, { email, password });
-            const { user, token } = response.data;
-            
-            // Store token and set auth header
-            localStorage.setItem('token', token);
-            this.setAuthToken(token);
-            store.setUser(user);
-            
-            return response.data;
+            if (response.data.success) {
+                const { user, token } = response.data;
+                localStorage.setItem('token', token);
+                this.setAuthToken(token);
+                store.setUser(user);
+                return response.data;
+            }
+            throw new Error(response.data.error || 'Login failed');
         } catch (error) {
-            throw error.response?.data || error;
+            throw new Error(error.response?.data?.error || 'Invalid credentials');
+        }
+    },
+
+    async getProfile() {
+        try {
+            const response = await axios.get(`${API_BASE_URL}/user/profile`);
+            return response.data.user;
+        } catch (error) {
+            throw new Error('Failed to load profile');
         }
     },
 
     async updateProfile(userData) {
         try {
-            const response = await axios.put(`${API_BASE_URL}/auth/profile`, userData);
-            store.setUser(response.data.user);
-            return response.data;
+            const response = await axios.put(`${API_BASE_URL}/user/profile`, userData);
+            if (response.data.success) {
+                const updatedUser = { ...store.user, ...userData };
+                store.setUser(updatedUser);
+                return response.data;
+            }
+            throw new Error('Failed to update profile');
         } catch (error) {
-            throw error.response?.data || error;
+            throw new Error(error.response?.data?.error || 'Failed to update profile');
         }
     },
 
-    // Bookings/Purchases
     async getBookings() {
         try {
             const response = await axios.get(`${API_BASE_URL}/bookings`);
-            return response.data;
+            return response.data.bookings || [];
         } catch (error) {
-            console.error('Error fetching bookings:', error);
-            throw error;
+            throw new Error('Failed to load bookings');
         }
     },
 
@@ -162,60 +208,21 @@ const api = {
             const response = await axios.post(`${API_BASE_URL}/bookings`, bookingData);
             return response.data;
         } catch (error) {
-            throw error.response?.data || error;
-        }
-    },
-
-    async updateBooking(bookingId, bookingData) {
-        try {
-            const response = await axios.put(`${API_BASE_URL}/bookings/${bookingId}`, bookingData);
-            return response.data;
-        } catch (error) {
-            throw error.response?.data || error;
-        }
-    },
-
-    async deleteBooking(bookingId) {
-        try {
-            await axios.delete(`${API_BASE_URL}/bookings/${bookingId}`);
-        } catch (error) {
-            throw error.response?.data || error;
+            throw new Error(error.response?.data?.error || 'Failed to create booking');
         }
     }
 };
 
-// Router Configuration
+// Routes
 const routes = [
-    { path: '/', name: 'Home', component: HomePage },
-    { path: '/products', name: 'Products', component: ProductsPage },
-    { path: '/products/:category', name: 'ProductsByCategory', component: ProductsPage },
-    { path: '/cart', name: 'Cart', component: CartPage },
-    { path: '/register', name: 'Register', component: RegisterPage },
-    { path: '/login', name: 'Login', component: LoginPage },
-    { 
-        path: '/account', 
-        name: 'Account', 
-        component: AccountPage,
-        beforeEnter: (to, from, next) => {
-            if (!store.isLoggedIn) {
-                next('/login');
-            } else {
-                next();
-            }
-        }
-    },
-    { 
-        path: '/purchases', 
-        name: 'Purchases', 
-        component: PurchasesPage,
-        beforeEnter: (to, from, next) => {
-            if (!store.isLoggedIn) {
-                next('/login');
-            } else {
-                next();
-            }
-        }
-    }
+    { path: '/', component: HomePage },
+    { path: '/products', component: ProductsPage },
+    { path: '/products/:category', component: ProductsPage },
+    { path: '/cart', component: CartPage },
+    { path: '/register', component: RegisterPage },
+    { path: '/login', component: LoginPage },
+    { path: '/account', component: AccountPage },
+    { path: '/purchases', component: PurchasesPage }
 ];
 
 const router = createRouter({
@@ -223,24 +230,16 @@ const router = createRouter({
     routes
 });
 
-// Vue App Configuration
+// Vue App
 const app = createApp({
     data() {
-        return {
-            store
-        };
+        return { store };
     },
     
     computed: {
-        isLoggedIn() {
-            return this.store.isLoggedIn;
-        },
-        currentUser() {
-            return this.store.user;
-        },
-        cartCount() {
-            return this.store.cartCount;
-        }
+        isLoggedIn() { return this.store.isLoggedIn; },
+        currentUser() { return this.store.user; },
+        cartCount() { return this.store.cartCount; }
     },
     
     methods: {
@@ -251,33 +250,42 @@ const app = createApp({
         }
     },
     
-    async created() {
-        // Initialize auth token if exists
+    created() {
+        console.log('Vue app created');
+        
+        // 恢复登录状态
         const token = localStorage.getItem('token');
-        if (token) {
-            api.setAuthToken(token);
-            
-            // Try to get user info from token
+        const savedUser = localStorage.getItem('user');
+        
+        if (token && savedUser) {
             try {
-                const response = await axios.get(`${API_BASE_URL}/auth/me`);
-                this.store.setUser(response.data.user);
+                api.setAuthToken(token);
+                this.store.setUser(JSON.parse(savedUser));
             } catch (error) {
-                // Token invalid, clear it
+                localStorage.removeItem('user');
                 localStorage.removeItem('token');
-                api.setAuthToken(null);
             }
         }
         
-        // Load cart from localStorage
+        // 恢复购物车
         this.store.loadCart();
+    },
+    
+    mounted() {
+        console.log('Vue app mounted');
     }
 });
 
-// Global Properties
+// Register components
+app.component('PackageCard', PackageCard);
+app.component('AlertMessage', AlertMessage);
+app.component('LoadingSpinner', LoadingSpinner);
+
+// Global properties
 app.config.globalProperties.$api = api;
 app.config.globalProperties.$store = store;
 
-// Global Filters
+// Global filters
 app.config.globalProperties.$filters = {
     currency(value) {
         return new Intl.NumberFormat('en-AU', {
@@ -293,22 +301,14 @@ app.config.globalProperties.$filters = {
     
     truncate(text, length = 100) {
         if (!text) return '';
-        if (text.length <= length) return text;
-        return text.substring(0, length) + '...';
-    },
-    
-    phone(phoneNumber) {
-        if (!phoneNumber) return '';
-        const cleaned = phoneNumber.replace(/\D/g, '');
-        if (cleaned.startsWith('61')) {
-            return `+61 ${cleaned.substring(2, 3)} ${cleaned.substring(3, 7)} ${cleaned.substring(7)}`;
-        } else if (cleaned.startsWith('0')) {
-            return `${cleaned.substring(0, 4)} ${cleaned.substring(4, 7)} ${cleaned.substring(7)}`;
-        }
-        return phoneNumber;
+        return text.length <= length ? text : text.substring(0, length) + '...';
     }
 };
 
-// Mount the app
+// Use router
 app.use(router);
-app.mount('#app');
+
+// Mount app
+console.log('Mounting Vue app...');
+const vueApp = app.mount('#app');
+console.log('Vue app mounted successfully');

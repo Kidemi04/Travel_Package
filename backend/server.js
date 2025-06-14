@@ -1,34 +1,44 @@
+// TravelEase Backend API Server - Simplified Working Version
 const express = require('express');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
-const dotenv = require('dotenv');
-
-dotenv.config();
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// MySQL Database Configuration
+// Database configuration
 const dbConfig = {
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'travelease',
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
+    database: process.env.DB_NAME || 'travelease'
 };
 
+// Create database connection pool
 const pool = mysql.createPool(dbConfig);
 
-// Authentication Middleware
+// Test database connection
+async function testConnection() {
+    try {
+        const connection = await pool.getConnection();
+        console.log('✅ Database connected successfully');
+        connection.release();
+        return true;
+    } catch (error) {
+        console.error('❌ Database connection failed:', error.message);
+        return false;
+    }
+}
+
+// JWT middleware
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -37,7 +47,7 @@ const authenticateToken = (req, res, next) => {
         return res.status(401).json({ error: 'Access token required' });
     }
 
-    jwt.verify(token, JWT_SECRET, (err, user) => {
+    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
         if (err) {
             return res.status(403).json({ error: 'Invalid or expired token' });
         }
@@ -46,222 +56,280 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
-// Routes
+// ==================== BASIC ROUTES ====================
 
-// Travel Packages Routes
+// Health check
+app.get('/api/health', async (req, res) => {
+    try {
+        const dbConnected = await testConnection();
+        res.json({ 
+            status: 'OK', 
+            message: 'TravelEase API is running',
+            database: dbConnected ? 'Connected' : 'Disconnected'
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            status: 'ERROR', 
+            message: 'API health check failed'
+        });
+    }
+});
+
+// Get all packages
 app.get('/api/packages', async (req, res) => {
     try {
-        const { category } = req.query;
-        let query = `
-            SELECT p.*, GROUP_CONCAT(pi.inclusion) as inclusions 
+        const [rows] = await pool.execute(`
+            SELECT 
+                p.*,
+                GROUP_CONCAT(pi.inclusion) as inclusions
             FROM travel_packages p 
-            LEFT JOIN package_inclusions pi ON p.id = pi.package_id 
-            WHERE p.available = true
-        `;
-        const params = [];
-
-        if (category && category !== 'all') {
-            query += ' AND p.category = ?';
-            params.push(category);
-        }
-
-        query += ' GROUP BY p.id ORDER BY p.rating DESC, p.created_at DESC';
-
-        const [rows] = await pool.execute(query, params);
+            LEFT JOIN package_inclusions pi ON p.id = pi.package_id
+            WHERE p.available = TRUE
+            GROUP BY p.id
+            ORDER BY p.rating DESC
+        `);
         
-        // Format inclusions as array
         const packages = rows.map(pkg => ({
             ...pkg,
             inclusions: pkg.inclusions ? pkg.inclusions.split(',') : []
         }));
-
-        res.json(packages);
+        
+        res.json({
+            success: true,
+            packages: packages
+        });
+        
     } catch (error) {
         console.error('Error fetching packages:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to fetch packages'
+        });
     }
 });
 
-app.get('/api/packages/search', async (req, res) => {
+// Get single package
+app.get('/api/packages/:id', async (req, res) => {
     try {
-        const { q } = req.query;
-        if (!q) {
-            return res.status(400).json({ error: 'Search query required' });
+        const packageId = parseInt(req.params.id);
+        
+        const [packageRows] = await pool.execute(
+            'SELECT * FROM travel_packages WHERE id = ? AND available = TRUE', 
+            [packageId]
+        );
+        
+        if (packageRows.length === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Package not found' 
+            });
         }
-
-        const query = `
-            SELECT p.*, GROUP_CONCAT(pi.inclusion) as inclusions 
-            FROM travel_packages p 
-            LEFT JOIN package_inclusions pi ON p.id = pi.package_id 
-            WHERE p.available = true 
-            AND (p.name LIKE ? OR p.destination LIKE ? OR p.description LIKE ?)
-            GROUP BY p.id 
-            ORDER BY p.rating DESC
-        `;
         
-        const searchTerm = `%${q}%`;
-        const [rows] = await pool.execute(query, [searchTerm, searchTerm, searchTerm]);
+        const [inclusionRows] = await pool.execute(
+            'SELECT inclusion FROM package_inclusions WHERE package_id = ?', 
+            [packageId]
+        );
         
-        const packages = rows.map(pkg => ({
-            ...pkg,
-            inclusions: pkg.inclusions ? pkg.inclusions.split(',') : []
-        }));
-
-        res.json(packages);
+        const packageData = {
+            ...packageRows[0],
+            inclusions: inclusionRows.map(row => row.inclusion)
+        };
+        
+        res.json({
+            success: true,
+            package: packageData
+        });
+        
     } catch (error) {
-        console.error('Error searching packages:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        console.error('Error fetching package:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to fetch package'
+        });
     }
 });
 
-// Authentication Routes
+// User registration
 app.post('/api/auth/register', async (req, res) => {
     try {
         const { firstName, lastName, email, password, phone, address } = req.body;
-
-        // Validation
+        
+        // Basic validation
         if (!firstName || !lastName || !email || !password || !phone || !address) {
-            return res.status(400).json({ error: 'All fields are required' });
+            return res.status(400).json({ 
+                success: false, 
+                error: 'All fields are required' 
+            });
         }
-
+        
         // Check if user exists
         const [existingUsers] = await pool.execute(
-            'SELECT id FROM users WHERE email = ?',
+            'SELECT id FROM users WHERE email = ?', 
             [email]
         );
-
+        
         if (existingUsers.length > 0) {
-            return res.status(400).json({ error: 'User with this email already exists' });
+            return res.status(409).json({ 
+                success: false, 
+                error: 'User already exists' 
+            });
         }
-
+        
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
-
+        
         // Insert user
         const [result] = await pool.execute(
-            'INSERT INTO users (firstName, lastName, email, password, phone, address) VALUES (?, ?, ?, ?, ?, ?)',
+            `INSERT INTO users (firstName, lastName, email, password, phone, address) 
+             VALUES (?, ?, ?, ?, ?, ?)`,
             [firstName, lastName, email, hashedPassword, phone, address]
         );
-
-        const userId = result.insertId;
-
-        // Generate JWT token
-        const token = jwt.sign({ userId, email }, JWT_SECRET, { expiresIn: '7d' });
-
+        
         res.status(201).json({
+            success: true,
             message: 'User registered successfully',
-            user: { id: userId, firstName, lastName, email, phone, address },
-            token
+            userId: result.insertId
         });
+        
     } catch (error) {
-        console.error('Error registering user:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        console.error('Registration error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Registration failed'
+        });
     }
 });
 
+// User login
 app.post('/api/auth/login', async (req, res) => {
     try {
         const { email, password } = req.body;
-
+        
         if (!email || !password) {
-            return res.status(400).json({ error: 'Email and password are required' });
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Email and password required' 
+            });
         }
-
+        
         // Find user
         const [users] = await pool.execute(
-            'SELECT * FROM users WHERE email = ? AND is_active = true',
+            'SELECT * FROM users WHERE email = ? AND is_active = TRUE', 
             [email]
         );
-
+        
         if (users.length === 0) {
-            return res.status(401).json({ error: 'Invalid email or password' });
+            return res.status(401).json({ 
+                success: false, 
+                error: 'Invalid credentials' 
+            });
         }
-
+        
         const user = users[0];
-
-        // Verify password
+        
+        // Check password
         const isValidPassword = await bcrypt.compare(password, user.password);
+        
         if (!isValidPassword) {
-            return res.status(401).json({ error: 'Invalid email or password' });
+            return res.status(401).json({ 
+                success: false, 
+                error: 'Invalid credentials' 
+            });
         }
-
-        // Generate JWT token
-        const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
-
+        
+        // Generate token
+        const token = jwt.sign(
+            { 
+                userId: user.id, 
+                email: user.email,
+                name: `${user.firstName} ${user.lastName}`
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+        
         // Remove password from response
         const { password: _, ...userWithoutPassword } = user;
-
+        
         res.json({
+            success: true,
             message: 'Login successful',
-            user: userWithoutPassword,
-            token
+            token: token,
+            user: userWithoutPassword
         });
+        
     } catch (error) {
-        console.error('Error logging in:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        console.error('Login error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Login failed'
+        });
     }
 });
 
-app.get('/api/auth/me', authenticateToken, async (req, res) => {
+// Get user profile
+app.get('/api/user/profile', authenticateToken, async (req, res) => {
     try {
         const [users] = await pool.execute(
             'SELECT id, firstName, lastName, email, phone, address, created_at FROM users WHERE id = ?',
             [req.user.userId]
         );
-
+        
         if (users.length === 0) {
-            return res.status(404).json({ error: 'User not found' });
+            return res.status(404).json({ 
+                success: false, 
+                error: 'User not found' 
+            });
         }
-
-        res.json({ user: users[0] });
-    } catch (error) {
-        console.error('Error fetching user:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
-
-app.put('/api/auth/profile', authenticateToken, async (req, res) => {
-    try {
-        const { firstName, lastName, email, phone, address } = req.body;
-
-        await pool.execute(
-            'UPDATE users SET firstName = ?, lastName = ?, email = ?, phone = ?, address = ? WHERE id = ?',
-            [firstName, lastName, email, phone, address, req.user.userId]
-        );
-
-        const [users] = await pool.execute(
-            'SELECT id, firstName, lastName, email, phone, address, created_at FROM users WHERE id = ?',
-            [req.user.userId]
-        );
-
+        
         res.json({
-            message: 'Profile updated successfully',
+            success: true,
             user: users[0]
         });
+        
     } catch (error) {
-        console.error('Error updating profile:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        console.error('Profile error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to fetch profile'
+        });
     }
 });
 
-// Bookings Routes
+// Update user profile
+app.put('/api/user/profile', authenticateToken, async (req, res) => {
+    try {
+        const { firstName, lastName, phone, address } = req.body;
+        
+        await pool.execute(
+            'UPDATE users SET firstName = ?, lastName = ?, phone = ?, address = ? WHERE id = ?',
+            [firstName, lastName, phone, address, req.user.userId]
+        );
+        
+        res.json({
+            success: true,
+            message: 'Profile updated successfully'
+        });
+        
+    } catch (error) {
+        console.error('Profile update error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to update profile'
+        });
+    }
+});
+
+// Get user bookings
 app.get('/api/bookings', authenticateToken, async (req, res) => {
     try {
         const [bookings] = await pool.execute(`
-            SELECT b.*, 
-                   JSON_ARRAYAGG(
-                       JSON_OBJECT(
-                           'id', bi.id,
-                           'package_id', bi.package_id,
-                           'name', tp.name,
-                           'destination', tp.destination,
-                           'duration', tp.duration,
-                           'quantity', bi.quantity,
-                           'unit_price', bi.unit_price,
-                           'total_price', bi.total_price,
-                           'special_requests', bi.special_requests
-                       )
-                   ) as items
+            SELECT 
+                b.*,
+                GROUP_CONCAT(
+                    CONCAT(tp.name, '|', tp.destination, '|', bi.quantity, '|', bi.total_price)
+                    SEPARATOR ';'
+                ) as booking_details
             FROM bookings b
             LEFT JOIN booking_items bi ON b.id = bi.booking_id
             LEFT JOIN travel_packages tp ON bi.package_id = tp.id
@@ -269,133 +337,107 @@ app.get('/api/bookings', authenticateToken, async (req, res) => {
             GROUP BY b.id
             ORDER BY b.booking_date DESC
         `, [req.user.userId]);
-
-        const formattedBookings = bookings.map(booking => ({
-            ...booking,
-            items: JSON.parse(booking.items || '[]'),
-            summary: {
-                subtotal: booking.subtotal,
-                tax: booking.tax_amount,
-                shipping: booking.shipping_cost,
-                discount: booking.discount_amount,
-                total: booking.total_amount
-            }
-        }));
-
-        res.json(formattedBookings);
+        
+        res.json({
+            success: true,
+            bookings: bookings
+        });
+        
     } catch (error) {
-        console.error('Error fetching bookings:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        console.error('Bookings error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to fetch bookings'
+        });
     }
 });
 
+// Create booking
 app.post('/api/bookings', authenticateToken, async (req, res) => {
-    const connection = await pool.getConnection();
-    
     try {
-        await connection.beginTransaction();
-
-        const { items, summary, special_requests } = req.body;
+        const { items } = req.body;
+        
+        if (!items || items.length === 0) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Items required' 
+            });
+        }
+        
+        // Calculate total
+        let subtotal = 0;
+        for (const item of items) {
+            const [packages] = await pool.execute(
+                'SELECT price FROM travel_packages WHERE id = ?',
+                [item.packageId]
+            );
+            
+            if (packages.length > 0) {
+                subtotal += packages[0].price * (item.quantity || 1);
+            }
+        }
+        
+        const taxAmount = subtotal * 0.10;
+        const totalAmount = subtotal + taxAmount;
         
         // Generate booking reference
-        const bookingRef = 'TRV' + Date.now();
-
-        // Insert booking
-        const [bookingResult] = await connection.execute(
-            'INSERT INTO bookings (user_id, booking_reference, subtotal, tax_amount, shipping_cost, discount_amount, total_amount, special_requests) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [req.user.userId, bookingRef, summary.subtotal, summary.tax, summary.shipping, summary.discount, summary.total, special_requests]
-        );
-
-        const bookingId = bookingResult.insertId;
-
-        // Insert booking items
-        for (const item of items) {
-            await connection.execute(
-                'INSERT INTO booking_items (booking_id, package_id, quantity, unit_price, total_price, special_requests) VALUES (?, ?, ?, ?, ?, ?)',
-                [bookingId, item.id, item.quantity, item.price, item.price * item.quantity, item.special_requests]
-            );
-        }
-
-        await connection.commit();
-
-        res.status(201).json({
-            message: 'Booking created successfully',
-            bookingId,
-            bookingReference: bookingRef
-        });
-    } catch (error) {
-        await connection.rollback();
-        console.error('Error creating booking:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    } finally {
-        connection.release();
-    }
-});
-
-app.put('/api/bookings/:id', authenticateToken, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { items } = req.body;
-
-        // Verify booking belongs to user
-        const [bookings] = await pool.execute(
-            'SELECT id FROM bookings WHERE id = ? AND user_id = ?',
-            [id, req.user.userId]
-        );
-
-        if (bookings.length === 0) {
-            return res.status(404).json({ error: 'Booking not found' });
-        }
-
-        // Update booking items (simplified - just update quantities)
-        for (const item of items) {
-            await pool.execute(
-                'UPDATE booking_items SET quantity = ?, total_price = ? WHERE booking_id = ? AND package_id = ?',
-                [item.quantity, item.unit_price * item.quantity, id, item.package_id]
-            );
-        }
-
-        res.json({ message: 'Booking updated successfully' });
-    } catch (error) {
-        console.error('Error updating booking:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
-
-app.delete('/api/bookings/:id', authenticateToken, async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        // Verify booking belongs to user
+        const bookingRef = 'TRV' + Date.now().toString().slice(-8);
+        
+        // Create booking
         const [result] = await pool.execute(
-            'UPDATE bookings SET status = "cancelled" WHERE id = ? AND user_id = ?',
-            [id, req.user.userId]
+            `INSERT INTO bookings 
+             (user_id, booking_reference, subtotal, tax_amount, total_amount) 
+             VALUES (?, ?, ?, ?, ?)`,
+            [req.user.userId, bookingRef, subtotal, taxAmount, totalAmount]
         );
-
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ error: 'Booking not found' });
-        }
-
-        res.json({ message: 'Booking cancelled successfully' });
+        
+        res.status(201).json({
+            success: true,
+            message: 'Booking created',
+            bookingId: result.insertId,
+            reference: bookingRef
+        });
+        
     } catch (error) {
-        console.error('Error cancelling booking:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        console.error('Booking creation error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to create booking'
+        });
     }
 });
 
-// Health check
-app.get('/api/health', (req, res) => {
-    res.json({ status: 'OK', message: 'TravelEase API is running' });
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ error: 'Something went wrong!' });
+// Error handling for undefined routes
+app.use('*', (req, res) => {
+    res.status(404).json({
+        success: false,
+        error: 'Route not found',
+        requestedRoute: req.originalUrl,
+        method: req.method
+    });
 });
 
 // Start server
-app.listen(PORT, () => {
-    console.log(`TravelEase API Server running on port ${PORT}`);
-    console.log(`Health check: http://localhost:${PORT}/api/health`);
-});
+async function startServer() {
+    try {
+        const dbConnected = await testConnection();
+        
+        if (!dbConnected) {
+            console.error('❌ Database connection failed');
+            process.exit(1);
+        }
+        
+        app.listen(PORT, () => {
+            console.log('🚀 TravelEase API Server running on port', PORT);
+            console.log('📊 Health check: http://localhost:' + PORT + '/api/health');
+            console.log('📦 Packages: http://localhost:' + PORT + '/api/packages');
+            console.log('🔐 Auth endpoints available');
+        });
+        
+    } catch (error) {
+        console.error('❌ Failed to start server:', error);
+        process.exit(1);
+    }
+}
+
+startServer();
